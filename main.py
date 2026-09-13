@@ -19,13 +19,6 @@ from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError, AuthKeyDuplicatedError
 from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.tl.functions.channels import LeaveChannelRequest, JoinChannelRequest
-from telethon.tl.types import (
-    KeyboardButtonUrl,
-    KeyboardButtonCallback,
-    KeyboardButton,
-    MessageEntityUrl,
-    MessageEntityTextUrl,
-)
 
 # ================== Logging ==================
 logging.basicConfig(
@@ -190,6 +183,7 @@ def parse_join_url(url):
     return None, None
 
 def get_all_buttons(msg):
+    """دریافت همه دکمه‌ها از پیام"""
     buttons = []
     msg_buttons = getattr(msg, "buttons", None)
     if msg_buttons:
@@ -198,6 +192,21 @@ def get_all_buttons(msg):
             for btn in row_btns or []:
                 buttons.append(btn)
     return buttons
+
+def get_button_url(btn):
+    """دریافت URL از دکمه - سازگار با همه نسخه‌ها"""
+    # بررسی attribute های مختلف
+    for attr in ['url', 'data', 'callback_data']:
+        if hasattr(btn, attr):
+            value = getattr(btn, attr)
+            if isinstance(value, bytes):
+                try:
+                    return value.decode('utf-8')
+                except:
+                    pass
+            elif isinstance(value, str):
+                return value
+    return None
 
 def find_claim_button(buttons):
     claim_keywords = ["claim", "receive", "get", "coin", "scoin", "دریافت", "سکه", "گرفتن", "دریافت سکه"]
@@ -319,15 +328,17 @@ async def process_main_channel(client, label, membership_manager):
             # عضویت در کانال‌ها
             join_btns = find_join_buttons(buttons)
             for btn in join_btns[:3]:
-                if isinstance(btn, KeyboardButtonUrl):
-                    h, u = parse_join_url(btn.url)
+                btn_url = get_button_url(btn)
+                if btn_url:
+                    h, u = parse_join_url(btn_url)
                     if h or u:
                         await join_channel(client, label, u or h, membership_manager)
                         await human_delay()
-                elif isinstance(btn, KeyboardButtonCallback):
+                else:
+                    # اگر دکمه callback بود، کلیک کن
                     try:
                         await client.click(ent, msg.id, btn)
-                        log.info(f"  [{label}] 🖱️ کلیک روی: {btn.text}")
+                        log.info(f"  [{label}] 🖱️ کلیک روی: {getattr(btn, 'text', '?')}")
                         await human_delay()
                     except Exception as e:
                         log.warning(f"  [{label}] ⚠️ خطا در کلیک: {e}")
@@ -335,7 +346,7 @@ async def process_main_channel(client, label, membership_manager):
             # دریافت سکه
             claim_btn = find_claim_button(buttons)
             if claim_btn:
-                log.info(f"  [{label}] 🎯 دریافت سکه: {claim_btn.text}")
+                log.info(f"  [{label}] 🎯 دریافت سکه: {getattr(claim_btn, 'text', '?')}")
                 try:
                     await client.click(ent, msg.id, claim_btn)
                     await human_delay()
