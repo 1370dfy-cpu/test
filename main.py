@@ -33,9 +33,6 @@ MAX_OPERATIONS_PER_RUN = 30
 MIN_DELAY_BETWEEN_ACTIONS = 30
 MAX_DELAY_BETWEEN_ACTIONS = 90
 
-ACTIVE_HOURS_START = 9
-ACTIVE_HOURS_END = 23
-
 DATA_FILE = "memberships.json"
 LEAVE_AFTER_DAYS = 5
 
@@ -159,11 +156,6 @@ async def wait_flood_wait(client, error):
     log.warning(f"⏳ FloodWait: {error.seconds}s → خواب {wait_time}s")
     await asyncio.sleep(wait_time)
 
-def is_active_hours():
-    now = datetime.now()
-    hour = now.hour
-    return ACTIVE_HOURS_START <= hour <= ACTIVE_HOURS_END
-
 def parse_join_url(url):
     url = (url or "").strip()
     if not url:
@@ -195,7 +187,6 @@ def get_all_buttons(msg):
 
 def get_button_url(btn):
     """دریافت URL از دکمه - سازگار با همه نسخه‌ها"""
-    # بررسی attribute های مختلف
     for attr in ['url', 'data', 'callback_data']:
         if hasattr(btn, attr):
             value = getattr(btn, attr)
@@ -370,10 +361,6 @@ async def process_main_channel(client, label, membership_manager):
 async def run_account(acc, membership_manager):
     client = None
     try:
-        if not is_active_hours():
-            log.info(f"[{acc['label']}] ⏰ خارج از ساعات کاری")
-            return False
-        
         client = TelegramClient(
             StringSession(acc["session"]),
             API_ID,
@@ -420,8 +407,6 @@ async def main():
     log.info("🚀 Coin Clicker Bot v3.0 - Speedy Member Edition")
     log.info(f"📱 {len(ALL_ACCOUNTS)} اکانت")
     log.info(f"📡 کانال: @{MAIN_CHANNEL}")
-    log.info(f"⏰ ساعات کاری: {ACTIVE_HOURS_START}:00 تا {ACTIVE_HOURS_END}:00")
-    log.info(f"🛡️ حداکثر {MAX_OPERATIONS_PER_RUN} عملیات در هر اجرا")
     log.info("=" * 60)
     
     membership_manager = MembershipManager()
