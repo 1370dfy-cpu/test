@@ -31,8 +31,8 @@ log = logging.getLogger("SpeedyMember")
 
 # ================== Anti-Ban Settings ==================
 MAX_OPERATIONS_PER_RUN = 30
-MIN_DELAY_BETWEEN_ACTIONS = 15  # کاهش از 30 به 15
-MAX_DELAY_BETWEEN_ACTIONS = 30  # کاهش از 90 به 30
+MIN_DELAY_BETWEEN_ACTIONS = 15
+MAX_DELAY_BETWEEN_ACTIONS = 30
 
 DATA_FILE = "memberships.json"
 LEAVE_AFTER_DAYS = 5
@@ -45,7 +45,7 @@ if not _api_id_raw or not API_HASH:
     raise SystemExit("❌ API_ID یا API_HASH ست نشده است")
 
 API_ID = int(_api_id_raw)
-MAIN_CHANNEL = "speedy_member"  # کانال اصلی
+MAIN_CHANNEL = "speedy_member"
 
 # ================== Account Setup ==================
 ALL_ACCOUNTS = []
@@ -148,6 +148,21 @@ class MembershipManager:
 
 # ================== Helper Functions ==================
 
+async def ensure_connected(client, label):
+    """بررسی و اتصال مجدد اگر قطع شده"""
+    try:
+        if not client.is_connected():
+            log.warning(f"  [{label}] 🔄 اتصال قطع شده، در حال اتصال مجدد...")
+            await client.connect()
+            if not await client.is_user_authorized():
+                log.error(f"  [{label}] ❌ سشن معتبر نیست")
+                return False
+            log.info(f"  [{label}] ✅ اتصال برقرار شد")
+        return True
+    except Exception as e:
+        log.error(f"  [{label}] ❌ خطا در اتصال: {e}")
+        return False
+
 async def human_delay():
     delay = random.uniform(MIN_DELAY_BETWEEN_ACTIONS, MAX_DELAY_BETWEEN_ACTIONS)
     await asyncio.sleep(delay)
@@ -232,9 +247,13 @@ def extract_urls_from_text(text):
     
     return urls
 
-async def click_button(client, entity, msg_id, btn):
+async def click_button(client, entity, msg_id, btn, label):
     """کلیک روی دکمه با روش صحیح Telethon"""
     try:
+        # بررسی اتصال
+        if not await ensure_connected(client, label):
+            return False
+        
         # روش 1: استفاده از GetBotCallbackAnswerRequest
         if hasattr(btn, 'data'):
             result = await client(GetBotCallbackAnswerRequest(
@@ -242,22 +261,26 @@ async def click_button(client, entity, msg_id, btn):
                 msg_id=msg_id,
                 data=btn.data
             ))
-            log.info(f"  ✅ کلیک شد: {getattr(btn, 'text', '?')}")
+            log.info(f"  [{label}] ✅ کلیک شد: {getattr(btn, 'text', '?')}")
             return True
         
         # روش 2: اگر دکمه URL داره
         btn_url = get_button_url(btn)
         if btn_url:
-            log.info(f"  🔗 دکمه URL: {btn_url}")
+            log.info(f"  [{label}] 🔗 دکمه URL: {btn_url}")
             return True
             
         return False
     except Exception as e:
-        log.warning(f"  ⚠️ خطا در کلیک: {e}")
+        log.warning(f"  [{label}] ⚠️ خطا در کلیک: {e}")
         return False
 
 async def join_channel(client, label, target, membership_manager, processed_channels):
     try:
+        # بررسی اتصال
+        if not await ensure_connected(client, label):
+            return False
+        
         if isinstance(target, str) and not target.startswith("@"):
             target = f"@{target}"
         
@@ -282,7 +305,7 @@ async def join_channel(client, label, target, membership_manager, processed_chan
         log.info(f"  [{label}] ✅ عضو شد: {channel_title}")
         
         membership_manager.add_membership(label, channel_id, channel_title)
-        processed_channels.add(channel_id)  # اضافه کردن به ست
+        processed_channels.add(channel_id)
         return True
         
     except FloodWaitError as e:
@@ -294,6 +317,11 @@ async def join_channel(client, label, target, membership_manager, processed_chan
             log.info(f"  [{label}] ℹ️ قبلاً عضو بوده")
         elif "successfully requested" in msg_str:
             log.info(f"  [{label}] ℹ️ درخواست عضویت ارسال شد")
+        elif "disconnected" in msg_str:
+            log.warning(f"  [{label}] ⚠️ اتصال قطع شده، تلاش مجدد...")
+            await asyncio.sleep(5)
+            if await ensure_connected(client, label):
+                return await join_channel(client, label, target, membership_manager, processed_channels)
         else:
             log.warning(f"  [{label}] ⚠️ خطا: {e}")
         return False
@@ -309,6 +337,10 @@ async def leave_channels(client, label, membership_manager):
     
     for m in to_leave:
         try:
+            # بررسی اتصال
+            if not await ensure_connected(client, label):
+                continue
+            
             await human_delay()
             entity = await client.get_entity(m["channel_id"])
             await client(LeaveChannelRequest(entity))
@@ -324,6 +356,10 @@ async def leave_channels(client, label, membership_manager):
 
 async def process_main_channel(client, label, membership_manager):
     try:
+        # بررسی اتصال
+        if not await ensure_connected(client, label):
+            return False
+        
         ent = await client.get_entity(MAIN_CHANNEL)
         title = getattr(ent, "title", MAIN_CHANNEL)[:30]
         log.info(f"  [{label}] 📬 پردازش {title}...")
@@ -331,7 +367,7 @@ async def process_main_channel(client, label, membership_manager):
         # ست برای جلوگیری از تکراری
         processed_channels = set()
         
-        msgs = await client.get_messages(ent, limit=10)  # کاهش به 10
+        msgs = await client.get_messages(ent, limit=10)
         
         for msg in msgs:
             if not msg:
@@ -340,6 +376,11 @@ async def process_main_channel(client, label, membership_manager):
             log.info(f"  [{label}] 🔄 پیام #{msg.id}")
             
             try:
+                # بررسی اتصال قبل از هر پیام
+                if not await ensure_connected(client, label):
+                    log.warning(f"  [{label}] ⚠️ اتصال قطع شده، توقف پردازش")
+                    break
+                
                 buttons = get_all_buttons(msg)
                 
                 if not buttons:
@@ -347,7 +388,7 @@ async def process_main_channel(client, label, membership_manager):
                     urls = extract_urls_from_text(msg.text)
                     if urls:
                         log.info(f"  [{label}] 🔗 {len(urls)} لینک در متن پیدا شد")
-                        for url in urls[:2]:  # حداکثر 2 لینک
+                        for url in urls[:2]:
                             h, u = parse_join_url(url)
                             if h or u:
                                 await join_channel(client, label, u or h, membership_manager, processed_channels)
@@ -357,7 +398,7 @@ async def process_main_channel(client, label, membership_manager):
                 # عضویت در کانال‌ها
                 join_btns = find_join_buttons(buttons)
                 joined = False
-                for btn in join_btns[:2]:  # حداکثر 2 دکمه
+                for btn in join_btns[:2]:
                     btn_url = get_button_url(btn)
                     if btn_url:
                         h, u = parse_join_url(btn_url)
@@ -367,13 +408,17 @@ async def process_main_channel(client, label, membership_manager):
                             await asyncio.sleep(random.uniform(15, 30))
                     else:
                         # اگر دکمه callback بود، کلیک کن
-                        await click_button(client, ent, msg.id, btn)
+                        await click_button(client, ent, msg.id, btn, label)
                         await asyncio.sleep(random.uniform(15, 30))
                 
                 # اگر عضو شدیم، پیام رو دوباره بگیریم و دکمه الماس رو کلیک کنیم
                 if joined:
                     await asyncio.sleep(random.uniform(5, 10))
                     try:
+                        # بررسی اتصال
+                        if not await ensure_connected(client, label):
+                            continue
+                        
                         # دریافت پیام جدید
                         new_msg = await client.get_messages(ent, ids=msg.id)
                         if new_msg:
@@ -381,7 +426,7 @@ async def process_main_channel(client, label, membership_manager):
                             claim_btn = find_claim_button(new_buttons)
                             if claim_btn:
                                 log.info(f"  [{label}] 🎯 دریافت سکه: {getattr(claim_btn, 'text', '?')}")
-                                await click_button(client, ent, new_msg.id, claim_btn)
+                                await click_button(client, ent, new_msg.id, claim_btn, label)
                                 await asyncio.sleep(random.uniform(15, 30))
                     except Exception as e:
                         log.warning(f"  [{label}] ⚠️ خطا در دریافت پیام جدید: {e}")
@@ -390,7 +435,7 @@ async def process_main_channel(client, label, membership_manager):
                     claim_btn = find_claim_button(buttons)
                     if claim_btn:
                         log.info(f"  [{label}] 🎯 دریافت سکه: {getattr(claim_btn, 'text', '?')}")
-                        await click_button(client, ent, msg.id, claim_btn)
+                        await click_button(client, ent, msg.id, claim_btn, label)
                         await asyncio.sleep(random.uniform(15, 30))
                 
             except Exception as e:
@@ -419,10 +464,12 @@ async def run_account(acc, membership_manager):
             API_ID,
             API_HASH,
             proxy=acc["proxy"],
-            connection_retries=5,
-            request_retries=5,
-            retry_delay=5,
-            timeout=30,
+            connection_retries=10,  # افزایش تعداد تلاش
+            request_retries=10,     # افزایش تعداد تلاش برای درخواست
+            retry_delay=3,          # کاهش تأخیر بین تلاشها
+            timeout=60,             # افزایش تایم اوت
+            auto_reconnect=True,    # اتصال خودکار مجدد
+            connection_retry_delay=5,
         )
         
         await client.start()
@@ -479,7 +526,7 @@ async def main():
             success_count += 1
         
         if idx < len(ALL_ACCOUNTS) - 1:
-            sleep_time = random.randint(60, 120)  # کاهش خواب بین اکانتها
+            sleep_time = random.randint(60, 120)
             log.info(f"⏳ خواب {sleep_time}s...")
             await asyncio.sleep(sleep_time)
     
