@@ -1,0 +1,32 @@
+name: Speedy Member Bot
+
+on:
+  schedule:
+    - cron: '0 6,12,18 * * *'  # 3 بار در روز
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install telethon
+      
+      - name: Run Bot
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          SESSION_1: ${{ secrets.SESSION_1 }}
+          PHONE_1: ${{ secrets.PHONE_1 }}
+          SESSION_2: ${{ secrets.SESSION_2 }}
+          PHONE_2: ${{ secrets.PHONE_2 }}
+          SESSION_3: ${{ secrets.SESSION_3 }}
+          PHONE_3: ${{ secrets.PHONE_3 }}
+        run: python main.py
