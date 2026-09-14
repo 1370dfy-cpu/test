@@ -2,7 +2,7 @@ name: Speedy Member Bot
 
 on:
   schedule:
-    - cron: '0 6,12,18 * * *'  # 3 بار در روز
+    - cron: '0 * * * *'  # 
   workflow_dispatch:
 
 jobs:
