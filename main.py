@@ -464,12 +464,11 @@ async def run_account(acc, membership_manager):
             API_ID,
             API_HASH,
             proxy=acc["proxy"],
-            connection_retries=10,  # افزایش تعداد تلاش
-            request_retries=10,     # افزایش تعداد تلاش برای درخواست
-            retry_delay=3,          # کاهش تأخیر بین تلاشها
-            timeout=60,             # افزایش تایم اوت
-            auto_reconnect=True,    # اتصال خودکار مجدد
-            connection_retry_delay=5,
+            connection_retries=10,
+            request_retries=10,
+            retry_delay=3,
+            timeout=60,
+            auto_reconnect=True,
         )
         
         await client.start()
